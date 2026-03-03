@@ -73,6 +73,29 @@ export const manifestSchema = z
         })
         .optional(),
     }).passthrough(),
+  )
+  .or(
+    z.object({
+      schemaVersion: z.literal(2),
+      artifactType: z.string(),
+      blobs: z.array(
+        z.object({
+          mediaType: z.string(),
+          digest: z.string(),
+          size: z.number().int(),
+          annotations: z.record(z.string()).optional(),
+        }),
+      ).optional(),
+      mediaType: z.string().optional(),
+      subject: z
+        .object({
+          mediaType: z.string(),
+          digest: z.string(),
+          size: z.number().int(),
+        })
+        .optional(),
+      annotations: z.record(z.string()).optional(),
+    }).passthrough(),
   );
 
 export type ManifestSchema = z.infer<typeof manifestSchema>;

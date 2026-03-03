@@ -275,10 +275,25 @@ export class R2Registry implements Registry {
       return null;
     }
 
-    const layers: string[] =
-      manifest.schemaVersion === 1
-        ? manifest.fsLayers.map((layer) => layer.blobSum)
-        : [...manifest.layers.map((layer) => layer.digest), manifest.config.digest];
+    const layers: string[] = [];
+    if (manifest.schemaVersion === 1) {
+      layers.push(...manifest.fsLayers.map((layer) => layer.blobSum));
+    } else {
+      if ("manifests" in manifest) {
+        // Handled above
+      } else {
+        if ("layers" in manifest && manifest.layers) {
+          layers.push(...manifest.layers.map((layer) => layer.digest));
+        }
+        if ("config" in manifest && manifest.config) {
+          layers.push(manifest.config.digest);
+        }
+        if ("blobs" in manifest && manifest.blobs) {
+          layers.push(...manifest.blobs.map((blob) => blob.digest));
+        }
+      }
+    }
+
     for (const key of layers) {
       const res = await this.env.REGISTRY.head(`${name}/blobs/${key}`);
       if (res === null) {

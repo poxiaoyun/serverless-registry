@@ -292,11 +292,21 @@ export class GarbageCollector {
         // Skip manifest-list, they don't contain any layers references
         if ("manifests" in manifestData) continue;
         // Add referenced layers from current manifest
-        manifestData.layers.forEach((layer) => {
-          referencedBlobs.add(layer.digest);
-        });
+        if ("layers" in manifestData && manifestData.layers) {
+          manifestData.layers.forEach((layer) => {
+            referencedBlobs.add(layer.digest);
+          });
+        }
         // Add referenced config blob from current manifest
-        referencedBlobs.add(manifestData.config.digest);
+        if ("config" in manifestData && manifestData.config) {
+          referencedBlobs.add(manifestData.config.digest);
+        }
+        // Add referenced blobs from OCI Artifact Manifest
+        if ("blobs" in manifestData && manifestData.blobs) {
+          manifestData.blobs.forEach((blob) => {
+            referencedBlobs.add(blob.digest);
+          });
+        }
       }
     }
 
