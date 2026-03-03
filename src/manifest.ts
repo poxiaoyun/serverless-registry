@@ -45,20 +45,32 @@ export const manifestSchema = z
     z.object({
       schemaVersion: z.literal(2),
       mediaType: z.string(),
+      artifactType: z.string().optional(),
       manifests: z.array(
         z.object({
           mediaType: z.string(),
-          platform: z.object({
-            "architecture": z.string(),
-            "os": z.string(),
-            "os.version": z.string().optional(),
-            "variant": z.string().optional(),
-            "features": z.array(z.string()).optional(),
-          }),
+          platform: z
+            .object({
+              "architecture": z.string(),
+              "os": z.string(),
+              "os.version": z.string().optional(),
+              "variant": z.string().optional(),
+              "features": z.array(z.string()).optional(),
+            })
+            .optional(),
           digest: z.string(),
           size: z.number().int(),
+          annotations: z.record(z.string()).optional(),
         }),
       ),
+      annotations: z.record(z.string()).optional(),
+      subject: z
+        .object({
+          mediaType: z.string(),
+          digest: z.string(),
+          size: z.number().int(),
+        })
+        .optional(),
     }),
   );
 

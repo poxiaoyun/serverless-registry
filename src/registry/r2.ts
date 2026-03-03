@@ -21,6 +21,8 @@ import {
   GetManifestResponse,
   ListRepositoriesResponse,
   PutManifestResponse,
+  ReferrerDescriptor,
+  ReferrersResponse,
   Registry,
   RegistryError,
   UploadId,
@@ -356,6 +358,34 @@ export class R2Registry implements Registry {
       });
     };
 
+    // Extract subject info for referrers index
+    const subjectDigest =
+      manifest.schemaVersion === 2 && "subject" in manifest && manifest.subject
+        ? manifest.subject.digest
+        : undefined;
+
+    const putReferrerIndex = async () => {
+      if (!subjectDigest) return;
+      const artifactType =
+        manifest.schemaVersion === 2 && "artifactType" in manifest && manifest.artifactType
+          ? manifest.artifactType
+          : contentType;
+      const descriptor: ReferrerDescriptor = {
+        mediaType: contentType,
+        digest: digestStr,
+        size: text.length,
+        artifactType,
+        annotations:
+          manifest.schemaVersion === 2 && "annotations" in manifest
+            ? manifest.annotations
+            : undefined,
+      };
+      return await env.REGISTRY.put(
+        `${name}/referrers/${subjectDigest}/${digestStr}`,
+        JSON.stringify(descriptor),
+      );
+    };
+
     await Promise.all([
       putReference(),
       // this is the "main" manifest
@@ -365,10 +395,12 @@ export class R2Registry implements Registry {
           contentType,
         },
       }),
+      putReferrerIndex(),
     ]);
     return {
       digest: hexToDigest(digest),
       location: `/v2/${name}/manifests/${reference}`,
+      subjectDigest,
     };
   }
 
@@ -822,6 +854,43 @@ export class R2Registry implements Registry {
       digest: sha256,
       location: `/v2/${namespace}/blobs/${sha256}`,
     };
+  }
+
+  async getReferrers(
+    namespace: string,
+    digest: string,
+    artifactType?: string,
+  ): Promise<ReferrersResponse | RegistryError> {
+    const referrers: ReferrerDescriptor[] = [];
+    const prefix = `${namespace}/referrers/${digest}/`;
+    let listed = await this.env.REGISTRY.list({ prefix });
+
+    const processObjects = async (objects: R2Object[]) => {
+      for (const obj of objects) {
+        const body = await this.env.REGISTRY.get(obj.key);
+        if (!body) continue;
+        const descriptor = await body.json<ReferrerDescriptor>();
+        if (!artifactType || descriptor.artifactType === artifactType) {
+          referrers.push(descriptor);
+        }
+      }
+    };
+
+    await processObjects(listed.objects);
+    while (listed.truncated) {
+      listed = await this.env.REGISTRY.list({ prefix, cursor: listed.cursor });
+      await processObjects(listed.objects);
+    }
+
+    return { referrers };
+  }
+
+  async deleteReferrer(
+    namespace: string,
+    subjectDigest: string,
+    referrerDigest: string,
+  ): Promise<void> {
+    await this.env.REGISTRY.delete(`${namespace}/referrers/${subjectDigest}/${referrerDigest}`);
   }
 
   async garbageCollection(namespace: string, mode: GarbageCollectionMode): Promise<boolean> {

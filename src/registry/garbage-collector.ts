@@ -200,29 +200,39 @@ export class GarbageCollector {
     if (options.mode === "untagged") {
       const manifestToRemove = new Set<string>();
       const referencedManifests = new Set<string>();
-      // List tagged manifest to find manifest-list
+      // Track manifests that have referrers (via subject field)
+      const manifestsWithReferrers = new Set<string>();
+
+      // Scan all manifests to find manifest-list references and subject references
       for (const [_, manifests] of Object.entries(manifestList)) {
-        const taggedManifest = [...manifests].filter((item) => !item.split("/").pop()?.startsWith("sha256:"));
-        for (const manifestPath of taggedManifest) {
-          // Tagged manifest some, load manifest content
+        for (const manifestPath of manifests) {
           const manifest = await this.registry.get(manifestPath);
-          if (!manifest) {
-            continue;
-          }
+          if (!manifest) continue;
 
           const manifestData = (await manifest.json()) as ManifestSchema;
-          // Search for manifest list
+          // Collect manifest list references
           if (manifestData.schemaVersion == 2 && "manifests" in manifestData) {
-            // Extract referenced manifests from manifest list
-            manifestData.manifests.forEach((manifest) => {
-              referencedManifests.add(manifest.digest);
+            manifestData.manifests.forEach((m) => {
+              referencedManifests.add(m.digest);
             });
+          }
+          // Collect subject references — the subject manifest should not be GC'd
+          if (manifestData.schemaVersion === 2 && "subject" in manifestData && manifestData.subject) {
+            referencedManifests.add(manifestData.subject.digest);
           }
         }
       }
 
+      // Also check referrer index entries to protect manifests that have referrers
+      for (const [key, _] of Object.entries(manifestList)) {
+        const referrers = await this.registry.list({ prefix: `${options.name}/referrers/${key}/`, limit: 1 });
+        if (referrers.objects.length > 0) {
+          manifestsWithReferrers.add(key);
+        }
+      }
+
       for (const [key, manifests] of Object.entries(manifestList)) {
-        if (referencedManifests.has(key)) {
+        if (referencedManifests.has(key) || manifestsWithReferrers.has(key)) {
           continue;
         }
         if (![...manifests].some((item) => !item.split("/").pop()?.startsWith("sha256:"))) {
@@ -235,13 +245,27 @@ export class GarbageCollector {
         }
       }
 
-      // Deleting untagged manifest
+      // Deleting untagged manifests and their referrer index entries
       if (manifestToRemove.size > 0) {
         if (!(await this.checkIfGCCanContinue(options.name, mark))) {
           throw new Error("there is a manifest insertion going, the garbage collection shall stop");
         }
 
-        // GC will deleted untagged manifest
+        // Clean up referrer index entries for manifests being deleted
+        for (const manifestPath of manifestToRemove) {
+          const manifestObj = await this.registry.get(manifestPath);
+          if (!manifestObj) continue;
+          try {
+            const manifestData = (await manifestObj.json()) as ManifestSchema;
+            if (manifestData.schemaVersion === 2 && "subject" in manifestData && manifestData.subject) {
+              const digest = manifestPath.split("/").pop()!;
+              await this.registry.delete(`${options.name}/referrers/${manifestData.subject.digest}/${digest}`);
+            }
+          } catch {
+            // best effort cleanup
+          }
+        }
+
         await this.registry.delete(manifestToRemove.values().toArray());
       }
     }

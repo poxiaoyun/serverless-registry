@@ -97,6 +97,19 @@ v2Router.delete("/:name+/manifests/:reference", async (req, env: Env) => {
     });
   }
 
+  // Read the manifest content to check for subject field and clean up referrer index
+  const manifestObj = await env.REGISTRY.get(`${name}/manifests/${reference}`);
+  if (manifestObj) {
+    try {
+      const manifestData = await manifestObj.json<{ subject?: { digest: string } }>();
+      if (manifestData.subject?.digest) {
+        await env.REGISTRY_CLIENT.deleteReferrer(name, manifestData.subject.digest, reference);
+      }
+    } catch {
+      // best effort: if we can't parse the manifest, skip referrer cleanup
+    }
+  }
+
   // Last but not least, delete the digest manifest
   await env.REGISTRY.delete(`${name}/manifests/${reference}`);
   return new Response("", {
@@ -260,13 +273,46 @@ v2Router.put("/:name+/manifests/:reference", async (req, env: Env) => {
     return res.response;
   }
 
+  const headers: Record<string, string> = {
+    "Location": res.location,
+    "Docker-Content-Digest": res.digest,
+  };
+  if (res.subjectDigest) {
+    headers["OCI-Subject"] = res.subjectDigest;
+  }
+
   return new Response(null, {
     status: 201,
-    headers: {
-      "Location": res.location,
-      "Docker-Content-Digest": res.digest,
-    },
+    headers,
   });
+});
+
+v2Router.get("/:name+/referrers/:digest", async (req, env: Env) => {
+  const { name, digest } = req.params;
+  const { artifactType } = req.query;
+  const res = await env.REGISTRY_CLIENT.getReferrers(
+    name,
+    digest,
+    artifactType?.toString(),
+  );
+  if ("response" in res) {
+    return res.response;
+  }
+
+  const index = {
+    schemaVersion: 2,
+    mediaType: "application/vnd.oci.image.index.v1+json",
+    manifests: res.referrers,
+  };
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/vnd.oci.image.index.v1+json",
+  };
+  if (artifactType) {
+    headers["OCI-Filters-Applied"] = "artifactType";
+  }
+
+  return new Response(JSON.stringify(index), { headers });
 });
 
 v2Router.get("/:name+/blobs/:digest", async (req, env: Env, context: ExecutionContext) => {

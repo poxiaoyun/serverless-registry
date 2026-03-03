@@ -10,6 +10,7 @@ import {
   GetManifestResponse,
   ListRepositoriesResponse,
   PutManifestResponse,
+  ReferrersResponse,
   Registry,
   RegistryConfiguration,
   RegistryError,
@@ -530,6 +531,22 @@ export class RegistryHTTPClient implements Registry {
 
   garbageCollection(_namespace: string, _mode: GarbageCollectionMode): Promise<boolean> {
     throw new Error("unimplemented");
+  }
+
+  getReferrers(
+    _namespace: string,
+    _digest: string,
+    _artifactType?: string,
+  ): Promise<ReferrersResponse | RegistryError> {
+    throw new Error("unimplemented");
+  }
+
+  async deleteReferrer(
+    _namespace: string,
+    _subjectDigest: string,
+    _referrerDigest: string,
+  ): Promise<void> {
+    // no-op for HTTP client
   }
 }
 

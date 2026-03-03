@@ -110,6 +110,21 @@ export type GetLayerResponse = {
 export type PutManifestResponse = {
   digest: string;
   location: string;
+  subjectDigest?: string;
+};
+
+// descriptor for a referrer manifest in the referrers API response
+export type ReferrerDescriptor = {
+  mediaType: string;
+  digest: string;
+  size: number;
+  artifactType?: string;
+  annotations?: Record<string, string>;
+};
+
+// returned by getReferrers
+export type ReferrersResponse = {
+  referrers: ReferrerDescriptor[];
 };
 
 // Registry interface to an implementation
@@ -188,6 +203,20 @@ export interface Registry {
     stream?: ReadableStream,
     length?: number,
   ): Promise<FinishedUploadObject | RegistryError>;
+
+  // get referrers for a manifest by its digest
+  getReferrers(
+    namespace: string,
+    digest: string,
+    artifactType?: string,
+  ): Promise<ReferrersResponse | RegistryError>;
+
+  // delete a referrer index entry when a manifest with subject is deleted
+  deleteReferrer(
+    namespace: string,
+    subjectDigest: string,
+    referrerDigest: string,
+  ): Promise<void>;
 
   garbageCollection(namespace: string, mode: GarbageCollectionMode): Promise<boolean>;
 }
