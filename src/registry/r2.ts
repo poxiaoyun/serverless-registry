@@ -336,7 +336,13 @@ export class R2Registry implements Registry {
     const digestStr = hexToDigest(digest);
     const text = await blob.text();
     const manifestJSON = JSON.parse(text);
-    const manifest = manifestSchema.parse(manifestJSON);
+    let manifest;
+    try {
+      manifest = manifestSchema.parse(manifestJSON);
+    } catch (err) {
+      console.error("Zod validation failed for manifest:", text);
+      throw err;
+    }
     if (checkLayers) {
       const verifyManifestErr = await this.verifyManifest(name, manifest);
       if (verifyManifestErr !== null) return { response: verifyManifestErr };

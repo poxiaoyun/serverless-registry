@@ -6,7 +6,7 @@ export const manifestSchema = z
     schemaVersion: z.literal(2),
     artifactType: z.string().optional(),
     // to maintain retrocompatibility of the registry, let's not assume mediaTypes
-    mediaType: z.string(),
+    mediaType: z.string().optional(),
     config: z.object({
       mediaType: z.string(),
       digest: z.string(),
@@ -27,7 +27,7 @@ export const manifestSchema = z
         size: z.number().int(),
       })
       .optional(),
-  })
+  }).passthrough()
   .or(
     z
       .object({
@@ -44,11 +44,12 @@ export const manifestSchema = z
   .or(
     z.object({
       schemaVersion: z.literal(2),
-      mediaType: z.string(),
+      mediaType: z.string().optional(),
       artifactType: z.string().optional(),
       manifests: z.array(
         z.object({
           mediaType: z.string(),
+          artifactType: z.string().optional(),
           platform: z
             .object({
               "architecture": z.string(),
@@ -71,7 +72,7 @@ export const manifestSchema = z
           size: z.number().int(),
         })
         .optional(),
-    }),
+    }).passthrough(),
   );
 
 export type ManifestSchema = z.infer<typeof manifestSchema>;
