@@ -263,7 +263,8 @@ export class R2Registry implements Registry {
 
   async verifyManifest(name: string, manifest: ManifestSchema) {
     if (manifest.schemaVersion === 2 && "manifests" in manifest) {
-      for (const manifestElement of manifest.manifests) {
+      const manifests = manifest.manifests as Array<{ digest: string }>;
+      for (const manifestElement of manifests) {
         const key = manifestElement.digest;
         const res = await this.env.REGISTRY.head(`${name}/manifests/${key}`);
         if (res === null) {
@@ -275,25 +276,10 @@ export class R2Registry implements Registry {
       return null;
     }
 
-    const layers: string[] = [];
-    if (manifest.schemaVersion === 1) {
-      layers.push(...manifest.fsLayers.map((layer) => layer.blobSum));
-    } else {
-      if ("manifests" in manifest) {
-        // Handled above
-      } else {
-        if ("layers" in manifest && manifest.layers) {
-          layers.push(...manifest.layers.map((layer) => layer.digest));
-        }
-        if ("config" in manifest && manifest.config) {
-          layers.push(manifest.config.digest);
-        }
-        if ("blobs" in manifest && manifest.blobs) {
-          layers.push(...manifest.blobs.map((blob) => blob.digest));
-        }
-      }
-    }
-
+    const layers: string[] =
+      manifest.schemaVersion === 1
+        ? manifest.fsLayers.map((layer) => layer.blobSum)
+        : [...manifest.layers.map((layer) => layer.digest), manifest.config.digest];
     for (const key of layers) {
       const res = await this.env.REGISTRY.head(`${name}/blobs/${key}`);
       if (res === null) {
@@ -351,13 +337,28 @@ export class R2Registry implements Registry {
     const digestStr = hexToDigest(digest);
     const text = await blob.text();
     const manifestJSON = JSON.parse(text);
-    let manifest;
-    try {
-      manifest = manifestSchema.parse(manifestJSON);
-    } catch (err) {
-      console.error("Zod validation failed for manifest:", text);
-      throw err;
+    const parseResult = manifestSchema.safeParse(manifestJSON);
+    if (!parseResult.success) {
+      console.error(
+        "Manifest validation failed. Keys:",
+        Object.keys(manifestJSON),
+        "schemaVersion:",
+        manifestJSON.schemaVersion,
+        "mediaType:",
+        manifestJSON.mediaType,
+        "has config:",
+        !!manifestJSON.config,
+        "has layers:",
+        !!manifestJSON.layers,
+        "has manifests:",
+        !!manifestJSON.manifests,
+        "has fsLayers:",
+        !!manifestJSON.fsLayers,
+      );
+      console.error("Zod errors:", JSON.stringify(parseResult.error.errors, null, 2));
+      return { response: new ServerError(`manifest validation failed: ${parseResult.error.message}`, 400) };
     }
+    const manifest = parseResult.data;
     if (checkLayers) {
       const verifyManifestErr = await this.verifyManifest(name, manifest);
       if (verifyManifestErr !== null) return { response: verifyManifestErr };

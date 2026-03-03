@@ -212,13 +212,15 @@ export class GarbageCollector {
           const manifestData = (await manifest.json()) as ManifestSchema;
           // Collect manifest list references
           if (manifestData.schemaVersion == 2 && "manifests" in manifestData) {
-            manifestData.manifests.forEach((m) => {
+            const manifests = manifestData.manifests as Array<{ digest: string }>;
+            manifests.forEach((m) => {
               referencedManifests.add(m.digest);
             });
           }
           // Collect subject references — the subject manifest should not be GC'd
           if (manifestData.schemaVersion === 2 && "subject" in manifestData && manifestData.subject) {
-            referencedManifests.add(manifestData.subject.digest);
+            const subject = manifestData.subject as { digest: string };
+            referencedManifests.add(subject.digest);
           }
         }
       }
@@ -292,21 +294,11 @@ export class GarbageCollector {
         // Skip manifest-list, they don't contain any layers references
         if ("manifests" in manifestData) continue;
         // Add referenced layers from current manifest
-        if ("layers" in manifestData && manifestData.layers) {
-          manifestData.layers.forEach((layer) => {
-            referencedBlobs.add(layer.digest);
-          });
-        }
+        manifestData.layers.forEach((layer) => {
+          referencedBlobs.add(layer.digest);
+        });
         // Add referenced config blob from current manifest
-        if ("config" in manifestData && manifestData.config) {
-          referencedBlobs.add(manifestData.config.digest);
-        }
-        // Add referenced blobs from OCI Artifact Manifest
-        if ("blobs" in manifestData && manifestData.blobs) {
-          manifestData.blobs.forEach((blob) => {
-            referencedBlobs.add(blob.digest);
-          });
-        }
+        referencedBlobs.add(manifestData.config.digest);
       }
     }
 
